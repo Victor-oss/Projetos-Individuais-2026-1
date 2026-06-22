@@ -14,7 +14,52 @@ PLANO_TARGET_URL = "https://ri.planoeplano.com.br/informacoes-financeiras/centra
 PLANO_API_URL = "https://apicatalog.mziq.com/filemanager/company/dd0335cb-6079-40d0-95fc-fbcb3fa580ef/filter/categories/year/meta"
 PLANO_INTERNAL_NAME = "central_de_resultados_itr"
 
+DIRECIONAL_TARGET_URL = "https://ri.direcional.com.br/informacoes-financeiras/central-de-resultados/"
+DIRECIONAL_API_URL = "https://apicatalog.mziq.com/filemanager/company/ada9bc2c-f7d0-4359-9eaf-851b679ab788/filter/categories/year/meta"
+DIRECIONAL_INTERNAL_NAME = "central_de_resultados_itrdfp"
+
+PACAEMBU_TARGET_URL = "https://ri.pacaembu.com/informacoes-financeiras/central-de-resultados/"
+PACAEMBU_API_URL = "https://apicatalog.mziq.com/filemanager/company/e7eb7558-1a9a-4262-b6a6-1167e239272e/filter/categories/year/meta"
+PACAEMBU_INTERNAL_NAME = "ITR_DFP"
+
 TENDA_TARGET_URL = "https://ri.tenda.com/informacoes-financeiras/central-de-resultados"
+
+async def scrape_select_based(context, name, target_url, api_url, internal_name):
+    page = await context.new_page()
+    await page.goto(target_url, wait_until="networkidle")
+
+    try:
+        options = await page.locator('#fano option').evaluate_all("opts => opts.map(o => o.value)")
+    except Exception:
+        options = []
+
+    for value in reversed(options):
+        try:
+            async with page.expect_response(
+                lambda r, _url=api_url: (
+                    _url in r.url
+                    and r.request.method == "POST"
+                ),
+                timeout=10000
+            ) as response_info:
+                await page.select_option("#fano", value)
+
+            response = await response_info.value
+            body = await response.json()
+
+            document_metas = body["data"].get("document_metas", [])
+            matches = [m for m in document_metas if m.get("internal_name") == internal_name]
+
+            if matches:
+                for match in matches:
+                    print(f"{name} option {value}: file_url={match.get('file_url')}, file_year={match.get('file_year')}, file_quarter={match.get('file_quarter')}")
+            else:
+                print(f"{name} option {value}: no entry with internal_name='{internal_name}' found")
+        except Exception as e:
+            print(f"{name} option {value}: {e}")
+
+    await page.close()
+
 
 async def main():
     async with async_playwright() as p:
@@ -60,57 +105,7 @@ async def main():
             else:
                 print(f"mrv index {i}: no API response captured")
 
-        cury_page = await context.new_page()
-        api_response_data = None
-
-        async def handle_cury_response(response: Response):
-            nonlocal api_response_data
-            if CURY_API_URL in response.url:
-                try:
-                    body = await response.json()
-                    if body.get("success") and "data" in body:
-                        api_response_data = body
-                except Exception:
-                    pass
-
-        await cury_page.goto(CURY_TARGET_URL, wait_until="networkidle")
-
-        try:
-            options = await cury_page.locator('#fano option').evaluate_all("opts => opts.map(o => o.value)")
-        except Exception:
-            options = []
-
-        for value in reversed(options):
-            try:
-                async with cury_page.expect_response(
-                    lambda r: (
-                        CURY_API_URL in r.url
-                        and r.request.method == "POST"
-                    ),
-                    timeout=10000
-                ) as response_info:
-                    await cury_page.select_option("#fano", value)
-
-                response = await response_info.value
-                body = await response.json()
-
-                document_metas = body["data"].get("document_metas", [])
-
-                matches = [
-                    m
-                    for m in document_metas
-                    if m.get("internal_name") == CURY_INTERNAL_NAME
-                ]
-
-                if matches:
-                    for match in matches:
-                        print(f"cury option {value}: file_url={match.get('file_url')}, file_year={match.get('file_year')}, file_quarter={match.get('file_quarter')}")
-                else:
-                    print(f"cury option {value}: no entry with internal_name='{CURY_INTERNAL_NAME}' found")
-            except Exception as e:
-                print(f"cury option {value}: {e}")
-
-        await cury_page.close()
+        await scrape_select_based(context, "cury", CURY_TARGET_URL, CURY_API_URL, CURY_INTERNAL_NAME)
 
         tenda_page = await context.new_page()
         await tenda_page.goto(TENDA_TARGET_URL, wait_until="networkidle")
@@ -160,49 +155,12 @@ async def main():
 
         await tenda_page.close()
 
-        plano_page = await context.new_page()
-        plano_api_response = None
+        await scrape_select_based(context, "plano", PLANO_TARGET_URL, PLANO_API_URL, PLANO_INTERNAL_NAME)
 
-        async def handle_plano_response(response: Response):
-            nonlocal plano_api_response
-            if PLANO_API_URL in response.url:
-                try:
-                    body = await response.json()
-                    if body.get("success") and "data" in body:
-                        plano_api_response = body
-                except Exception:
-                    pass
+        await scrape_select_based(context, "direcional", DIRECIONAL_TARGET_URL, DIRECIONAL_API_URL, DIRECIONAL_INTERNAL_NAME)
 
-        await plano_page.goto(PLANO_TARGET_URL, wait_until="networkidle")
+        await scrape_select_based(context, "pacaembu", PACAEMBU_TARGET_URL, PACAEMBU_API_URL, PACAEMBU_INTERNAL_NAME)
 
-        try:
-            options = await plano_page.locator('#fano option').evaluate_all("opts => opts.map(o => o.value)")
-        except Exception:
-            options = []
-
-        for value in reversed(options):
-            try:
-                async with plano_page.expect_response(
-                    lambda r: (
-                        PLANO_API_URL in r.url
-                        and r.request.method == "POST"
-                    ),
-                    timeout=10000
-                ) as response_info:
-                    await plano_page.select_option("#fano", value)
-                response = await response_info.value
-                body = await response.json()
-                document_metas = body["data"].get("document_metas", [])
-                matches = [m for m in document_metas if m.get("internal_name") == PLANO_INTERNAL_NAME]
-                if matches:
-                    for match in matches:
-                        print(f"plano option {value}: file_url={match.get('file_url')}, file_year={match.get('file_year')}, file_quarter={match.get('file_quarter')}")
-                else:
-                    print(f"plano option {value}: no entry with internal_name='{PLANO_INTERNAL_NAME}' found")
-            except Exception as e:
-                print(f"plano option {value}: {e}")
-
-        await plano_page.close()
         await browser.close()
 
 
