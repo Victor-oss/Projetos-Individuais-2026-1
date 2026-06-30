@@ -21,6 +21,8 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://scrapper:scrapper123@db:5432/scrapper_db
     depends_on:
