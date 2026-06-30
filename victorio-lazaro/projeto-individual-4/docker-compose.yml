@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: scrapper
+      POSTGRES_PASSWORD: scrapper123
+      POSTGRES_DB: scrapper_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scrapper -d scrapper_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://scrapper:scrapper123@db:5432/scrapper_db
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
